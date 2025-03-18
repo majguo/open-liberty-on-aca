@@ -136,14 +136,6 @@ git clone https://github.com/Azure-Samples/open-liberty-on-aca.git
 cd open-liberty-on-aca/java-app-monitoring
 ```
 
-The [`src/main/liberty/config/jvm.options`](src/main/liberty/config/jvm.options) file contains the Azure Application Insights OpenTelemetry Java agent configuration:
-
-```
--javaagent:/liberty/usr/shared/resources/applicationinsights-agent.jar
-```
-
-The specified Java agent is attached to the Liberty runtime when the application is started. The agent dynamically injects bytecode that instruments the application to collect telemetry data and send it to Azure Application Insights. 
-
 ## Building and Deploying the Application
 
 Build and package the application:
@@ -242,4 +234,3 @@ You can learn more about Azure Application Insights, Open Liberty, and OpenTelem
 
 - [Enable Azure Monitor OpenTelemetry for .NET, Node.js, Python, and Java applications](https://learn.microsoft.com/azure/azure-monitor/app/opentelemetry-enable?tabs=java)
 - [Collect logs, metrics, and traces with OpenTelemetry](https://openliberty.io/docs/latest/microprofile-telemetry.html)
-- [OpenTelemetry Java instrumentation documentation](https://github.com/open-telemetry/opentelemetry-java-instrumentation/blob/main/docs/supported-libraries.md)

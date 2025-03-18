@@ -89,14 +89,6 @@
                             <outputDirectory>${project.build.directory}/liberty/wlp/usr/shared/resources</outputDirectory>
                             <destFileName>mssql-jdbc.jar</destFileName>
                         </artifactItem>
-                        <artifactItem>
-                            <groupId>com.microsoft.azure</groupId>
-                            <artifactId>applicationinsights-agent</artifactId>
-                            <version>3.7.1</version>
-                            <type>jar</type>
-                            <outputDirectory>${project.build.directory}/liberty/wlp/usr/shared/resources</outputDirectory>
-                            <destFileName>applicationinsights-agent.jar</destFileName>
-                        </artifactItem>
                     </artifactItems>
                 </configuration>
             </plugin>
