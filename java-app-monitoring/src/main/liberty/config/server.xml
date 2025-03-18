@@ -24,6 +24,7 @@
     <!-- Define web application with its context root and location -->
     <webApplication id="javaee-cafe-monitoring" contextRoot="/"
                     location="${server.config.dir}/apps/javaee-cafe-monitoring.war">
+        <classloader apiTypeVisibility="+third-party"/>
     </webApplication>
 
     <!-- https://openliberty.io/docs/latest/reference/config/httpSessionDatabase.html -->

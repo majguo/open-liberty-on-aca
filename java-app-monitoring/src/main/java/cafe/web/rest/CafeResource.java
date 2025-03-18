@@ -1,6 +1,7 @@
 package cafe.web.rest;
 
 import java.util.List;
+import jakarta.annotation.PostConstruct;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -14,15 +15,32 @@ import jakarta.ws.rs.core.MediaType;
 import cafe.model.CafeRepository;
 import cafe.model.entity.Coffee;
 
+import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.metrics.LongCounter;
+
 @Path("coffees")
 public class CafeResource {
 
     @Inject
     private CafeRepository cafeRepository;
 
+    @Inject
+    private Meter meter;
+
+    private LongCounter getAllCoffeesCounter;
+
+    @PostConstruct
+    public void initMetrics() {
+        this.getAllCoffeesCounter = meter.counterBuilder("getAllCoffees.invocations")
+                                         .setDescription("Counts the number of times getAllCoffees is invoked")
+                                         .setUnit("1")
+                                         .build();
+    }
+
     @GET
     @Produces({ MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON })
     public List<Coffee> getAllCoffees() {
+        this.getAllCoffeesCounter.add(1);
         return this.cafeRepository.getAllCoffees();
     }
 
