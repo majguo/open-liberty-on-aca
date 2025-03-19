@@ -1,6 +1,6 @@
-# Monitoring a Liberty application deployed on Azure Container Apps using Azure Application Insights
+# Monitoring a Liberty application deployed on Azure Container Apps with Azure Application Insights
 
-This example demonstrates how to monitor a Open Liberty or WebSphere Liberty application using Azure Application Insights.
+This example demonstrates how to monitor a Open Liberty or WebSphere Liberty application with Azure Application Insights using OpenTelemetry.
 It also provides instructions on how to deploy the application to Azure Container Apps.
 
 ## Prerequisites
@@ -40,7 +40,8 @@ WORKSPACE_NAME=${UNIQUE_VALUE}log
 APPINSIGHTS_NAME=${UNIQUE_VALUE}appinsights
 REGISTRY_NAME=${UNIQUE_VALUE}reg
 ACA_ENV=${UNIQUE_VALUE}env
-ACA_NAME=${UNIQUE_VALUE}aca
+ACA_OTEL_COLLECTOR=${UNIQUE_VALUE}acaotelcollector
+ACA_LIBERTY_APP=${UNIQUE_VALUE}acalibertyapp
 ```
 
 Next, create the resource group to host Azure resources:
@@ -138,13 +139,62 @@ cd open-liberty-on-aca/java-app-monitoring
 
 ## Building and Deploying the Application
 
-Build and package the application:
+In this example, the Liberty application is instrumented with MicroProfile OpenTelemetry feature to collect telemetry data and export it to an OpenTelemetry Collector using the OpenTelemetry Protocol (OTLP). The OpenTelemetry Collector is configured to export the telemetry data to Azure Application Insights. For more information, see [OpenTelemetry Collector Agent Deployment](https://opentelemetry.io/docs/collector/deployment/agent/). 
+
+The following steps show how to build and deploy the OpenTelemetry Collector and Liberty application to Azure Container Apps.
+
+### Building and Deploying the OpenTelemetry Collector
+
+Build docker image for the OpenTelemetry Collector:
+
+```bash
+docker buildx build --platform linux/amd64 -t otel-collector --pull --file=otel-collector/Dockerfile .
+```
+
+Sign in to the Azure Container Registry and push the Docker image to the registry:
+
+```bash
+az acr login \
+    --name $REGISTRY_NAME \
+    --resource-group $RESOURCE_GROUP_NAME
+docker tag otel-collector $LOGIN_SERVER/otel-collector
+docker push $LOGIN_SERVER/otel-collector
+```
+
+Deploy the OpenTelemetry Collector to Azure Container Apps that pulls the docker image from the Azure Container Registry. The collector is configured to export the telemetry data to Azure Application Insights:
+
+```bash
+export APPLICATIONINSIGHTS_CONNECTION_STRING=$(az monitor app-insights component show \
+    --resource-group ${RESOURCE_GROUP_NAME} \
+    --query '[0].connectionString' -o tsv)
+
+az containerapp create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name $ACA_OTEL_COLLECTOR \
+    --environment $ACA_ENV \
+    --image $LOGIN_SERVER/otel-collector \
+    --registry-server $LOGIN_SERVER \
+    --registry-identity system \
+    --target-port 4318 \
+    --secrets \
+        appinsightsconnstring=${APPLICATIONINSIGHTS_CONNECTION_STRING} \
+    --env-vars \
+        APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsightsconnstring \
+    --ingress 'internal' \
+    --min-replicas 1
+```
+
+Wait for a while until the collector is deployed, started and running.
+
+### Building and Deploying the Liberty Application
+
+Build and package the Liberty application:
 
 ```bash
 mvn clean package
 ```
 
-Containerize the application by building the Docker image:
+Containerize the Liberty application by building the Docker image:
 
 ```bash
 docker buildx build --platform linux/amd64 -t javaee-cafe-monitoring:v1 --pull --file=Dockerfile .
@@ -153,26 +203,26 @@ docker buildx build --platform linux/amd64 -t javaee-cafe-monitoring:v1 --pull -
 Sign in to the Azure Container Registry and push the Docker image to the registry:
 
 ```bash
+az acr login \
+    --name $REGISTRY_NAME \
+    --resource-group $RESOURCE_GROUP_NAME
 docker tag javaee-cafe-monitoring:v1 $LOGIN_SERVER/javaee-cafe-monitoring:v1
-az acr login --name $REGISTRY_NAME
 docker push $LOGIN_SERVER/javaee-cafe-monitoring:v1
 ```
 
-Deploy the application to Azure Container Apps that pulls the application image from the Azure Container Registry. The application is configured with the Azure SQL Database, Azure Application Insights, and other environment variables:
+Deploy the Liberty application to Azure Container Apps that pulls the docker image from the Azure Container Registry. The Liberty application is configured with the Azure SQL Database and OpenTelemetry Collector that you deployed earlier:
 
 ```bash
 export DB_SERVER_NAME=$SQL_SERVER_NAME.database.windows.net
 export DB_NAME=$DB_NAME
 export DB_USER=$DB_ADMIN@$DB_SERVER_NAME
 export DB_PASSWORD=$DB_ADMIN_PWD
-export APPLICATIONINSIGHTS_CONNECTION_STRING=$(az monitor app-insights component show \
-    --resource-group ${RESOURCE_GROUP_NAME} \
-    --query '[0].connectionString' -o tsv)
+export OTEL_SDK_DISABLED=false
 export OTEL_SERVICE_NAME=javaee-cafe-monitoring
 
 az containerapp create \
     --resource-group $RESOURCE_GROUP_NAME \
-    --name $ACA_NAME \
+    --name $ACA_LIBERTY_APP \
     --environment $ACA_ENV \
     --image $LOGIN_SERVER/javaee-cafe-monitoring:v1 \
     --registry-server $LOGIN_SERVER \
@@ -183,36 +233,36 @@ az containerapp create \
         dbname=${DB_NAME} \
         dbuser=${DB_USER} \
         dbpassword=${DB_PASSWORD} \
-        appinsightsconnstring=${APPLICATIONINSIGHTS_CONNECTION_STRING} \
     --env-vars \
         DB_SERVER_NAME=secretref:dbservername \
         DB_NAME=secretref:dbname \
         DB_USER=secretref:dbuser \
         DB_PASSWORD=secretref:dbpassword \
-        APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsightsconnstring \
+        OTEL_EXPORTER_OTLP_ENDPOINT=http://${ACA_OTEL_COLLECTOR} \
+        OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+        OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED} \
         OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME} \
     --ingress 'external' \
     --min-replicas 1
 ```
 
-Wait for a while until the application is deployed, started and running. Then get the application URL and open it in a browser:
+Wait for a while until the Liberty application is deployed, started and running. Then get the application URL and open it in a browser:
 
 ```bash
 APP_URL=https://$(az containerapp show \
     --resource-group $RESOURCE_GROUP_NAME \
-    --name $ACA_NAME \
+    --name $ACA_LIBERTY_APP \
     --query properties.configuration.ingress.fqdn -o tsv)
 echo $APP_URL
 ```
 
-You should see the Jakarta EE Cafe home page. Do interact with the application by adding, viewing, and removing coffees, which generates telemetry data and sends it to Azure Application Insights.
+You should see the Jakarta EE Cafe home page. Do interact with the application by adding, viewing, and removing coffees, which generates telemetry data and sends it to Azure Application Insights via the OpenTelemetry Collector.
 
 ## Monitoring the Application
 
-Open the Azure Portal and navigate to the Azure Monitor Application Insights resource you created earlier. You can monitor the application with different views backed by the telemetry data sent from the application. For example:
+Open the Azure Portal and navigate to the Azure Monitor Application Insights resource you created earlier. You can monitor the Liberty application with different views backed by the telemetry data sent from the Liberty application. For example:
 
 * Investigate > Application map: Shows the application components and their dependencies.
-* Investigate > Live metrics: Shows the live metrics of the application.
 * Investigate > Failures: Shows the failures and exceptions in the application.
 * Investigate > Performance: Shows the performance of the application.
 * Monitoring > Metrics: Shows the metrics of the application.
@@ -230,7 +280,9 @@ az group delete \
 
 ## Resources
 
-You can learn more about Azure Application Insights, Open Liberty, and OpenTelemetry from the following resources:
+You can learn more about Open Liberty, OpenTelemetry and Azure Monitor Application Insights from the following resources:
 
-- [Enable Azure Monitor OpenTelemetry for .NET, Node.js, Python, and Java applications](https://learn.microsoft.com/azure/azure-monitor/app/opentelemetry-enable?tabs=java)
 - [Collect logs, metrics, and traces with OpenTelemetry](https://openliberty.io/docs/latest/microprofile-telemetry.html)
+- [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)
+- [Azure Monitor Exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/azuremonitorexporter)
+- [Introduction to Application Insights with OpenTelemetry](https://learn.microsoft.com/azure/azure-monitor/app/app-insights-overview)
