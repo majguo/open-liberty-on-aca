@@ -33,8 +33,6 @@ LOCATION=<your-preferred-location, e.g., eastus2>
 RESOURCE_GROUP_NAME=${UNIQUE_VALUE}rg
 SQL_SERVER_NAME=${UNIQUE_VALUE}db
 DB_NAME=demodb
-DB_ADMIN=demouser
-DB_ADMIN_PWD='super$ecr3t'$RANDOM$RANDOM
 WORKSPACE_NAME=${UNIQUE_VALUE}log
 APPINSIGHTS_NAME=${UNIQUE_VALUE}appinsights
 REGISTRY_NAME=${UNIQUE_VALUE}reg
@@ -59,8 +57,10 @@ Create the Azure SQL Database server, database, and firewall rule that allows al
 az sql server create \
     --name $SQL_SERVER_NAME \
     --resource-group $RESOURCE_GROUP_NAME \
-    --admin-user $DB_ADMIN \
-    --admin-password $DB_ADMIN_PWD
+    --enable-ad-only-auth \
+    --external-admin-principal-type User \
+    --external-admin-name $(az account show --query user.name --output tsv) \
+    --external-admin-sid $(az ad signed-in-user show --query id --output tsv)
 az sql db create \
     --resource-group $RESOURCE_GROUP_NAME \
     --server $SQL_SERVER_NAME \
@@ -194,13 +194,9 @@ Build Docker image for the Liberty application and push the Docker image to the 
 az acr build -t javaee-cafe-monitoring:v1 -r $REGISTRY_NAME -f Dockerfile .
 ```
 
-Deploy the Liberty application to Azure Container Apps that pulls the Docker image from the Azure Container Registry. The Liberty application is configured with the Azure SQL Database and OpenTelemetry Collector that you deployed earlier:
+Deploy the Liberty application to Azure Container Apps that pulls the Docker image from the Azure Container Registry. The Liberty application is configured with the Azure SQL Database Entra authentication and OpenTelemetry Collector that you deployed earlier:
 
 ```bash
-export DB_SERVER_NAME=$SQL_SERVER_NAME.database.windows.net
-export DB_NAME=$DB_NAME
-export DB_USER=$DB_ADMIN@$DB_SERVER_NAME
-export DB_PASSWORD=$DB_ADMIN_PWD
 export OTEL_SDK_DISABLED=false
 export OTEL_SERVICE_NAME=javaee-cafe-monitoring
 
@@ -212,22 +208,27 @@ az containerapp create \
     --registry-server $LOGIN_SERVER \
     --registry-identity system \
     --target-port 9080 \
-    --secrets \
-        dbservername=${DB_SERVER_NAME} \
-        dbname=${DB_NAME} \
-        dbuser=${DB_USER} \
-        dbpassword=${DB_PASSWORD} \
     --env-vars \
-        DB_SERVER_NAME=secretref:dbservername \
-        DB_NAME=secretref:dbname \
-        DB_USER=secretref:dbuser \
-        DB_PASSWORD=secretref:dbpassword \
         OTEL_EXPORTER_OTLP_ENDPOINT=http://${ACA_OTEL_COLLECTOR} \
         OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
         OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED} \
         OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME} \
     --ingress 'external' \
     --min-replicas 1
+```
+
+Connect the database to the container app with a system-assigned managed identity by using the following command:
+
+```bash
+az containerapp connection create sql \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --name $ACA_LIBERTY_APP \
+    --target-resource-group $RESOURCE_GROUP_NAME \
+    --server $SQL_SERVER_NAME \
+    --database $DB_NAME \
+    --system-identity \
+    --container $ACA_LIBERTY_APP \
+    --client-type java
 ```
 
 Wait for a while until the Liberty application is deployed, started and running. Then get the application URL and open it in a browser:

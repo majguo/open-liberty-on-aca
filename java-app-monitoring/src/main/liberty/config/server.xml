@@ -32,15 +32,10 @@
     <httpSessionDatabase id="SessionDB" dataSourceRef="JavaEECafeDB" writeContents="GET_AND_SET_ATTRIBUTES" />
     <httpSession storageRef="SessionDB" />
 
-    <variable name="db.port.number" defaultValue="1433"/>
     <dataSource id="JavaEECafeDB" jndiName="jdbc/JavaEECafeDB">
         <jdbcDriver libraryRef="driver-library" />
-        <properties.microsoft.sqlserver
-          serverName="${db.server.name}"
-          portNumber="${db.port.number}"
-          databaseName="${db.name}"
-          user="${db.user}"
-          password="${db.password}" />
+        <properties
+            URL="${azure.sql.connectionstring}" />
     </dataSource>
 
     <library id="driver-library">
