@@ -129,11 +129,11 @@ az containerapp env create \
 
 ## Preparing the Application
 
-Clone the repository and navigate to the `liberty-app-monitoring` directory:
+Clone the repository and navigate to the `java-app-monitoring` directory:
 
 ```bash
-git clone https://github.com/majguo/java-on-azure-samples.git
-cd java-on-azure-samples/liberty-app-monitoring
+git clone https://github.com/Azure-Samples/open-liberty-on-aca.git
+cd open-liberty-on-aca/java-app-monitoring
 ```
 
 ## Building and Deploying the Application
